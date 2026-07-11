@@ -9,6 +9,7 @@ st.set_page_config(
 PAGES = {
     "🏠 Home": "dashboard.home",
     "🖼 Image Studio": "dashboard.image_studio",
+    "🎬 Storyboard": "dashboard.storyboard",
     "🖼 Gallery": "dashboard.gallery",
     "📝 Prompt Library": "dashboard.prompt_library",
     "📊 GPU Dashboard": "dashboard.gpu_dashboard",
