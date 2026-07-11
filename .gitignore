@@ -68,3 +68,7 @@ cache/
 
 .DS_Store
 Thumbs.db
+
+# Archived duplicates and local backups
+_archive/
+*.bak
