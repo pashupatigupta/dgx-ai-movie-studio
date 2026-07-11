@@ -1,0 +1,145 @@
+"""
+Enterprise Model Manager Service
+DGX AI Movie Studio
+"""
+
+from repositories.model_repository import ModelRepository
+from services.model_service import ModelService
+
+
+class ModelManagerService:
+
+    def __init__(self):
+
+        self.repository = ModelRepository()
+
+        self.scanner = ModelService()
+
+    ####################################################
+
+    def refresh_models(self):
+
+        models = self.scanner.scan()
+
+        conn = self.repository.conn
+        cursor = conn.cursor()
+
+        cursor.execute("DELETE FROM models")
+
+        sql = (
+            "INSERT OR REPLACE INTO models "
+            "(name, model_type, folder, path, size_mb, last_modified) "
+            "VALUES (?, ?, ?, ?, ?, ?)"
+        )
+
+        for model in models:
+
+            cursor.execute(
+
+                sql,
+
+                (
+
+                    model["name"],
+
+                    model["type"],
+
+                    model["folder"],
+
+                    model["path"],
+
+                    model["size"],
+
+                    ""
+
+                )
+
+            )
+
+        conn.commit()
+
+        return len(models)
+
+    ####################################################
+
+    def get_models(self):
+
+        return self.repository.get_all()
+
+    ####################################################
+
+    def get_enabled_models(self):
+
+        return self.repository.get_enabled()
+
+    ####################################################
+
+    def get_default_model(self):
+
+        return self.repository.get_default()
+
+    ####################################################
+
+    def search(self, keyword):
+
+        return self.repository.search(keyword)
+
+    ####################################################
+
+    def filter(self, model_type):
+
+        return self.repository.get_by_type(model_type)
+
+    ####################################################
+
+    def enable(self, model_id):
+
+        self.repository.enable(model_id)
+
+    ####################################################
+
+    def disable(self, model_id):
+
+        self.repository.disable(model_id)
+
+    ####################################################
+
+    def set_default(self, model_id):
+
+        self.repository.set_default(model_id)
+
+    ####################################################
+
+    def update_metadata(
+
+        self,
+
+        model_id,
+
+        tags,
+
+        description
+
+    ):
+
+        self.repository.update_metadata(
+
+            model_id,
+
+            tags,
+
+            description
+
+        )
+
+    ####################################################
+
+    def statistics(self):
+
+        return self.repository.statistics()
+
+    ####################################################
+
+    def close(self):
+
+        self.repository.close()

@@ -1,0 +1,276 @@
+===== core/session.py =====
+import streamlit as st
+
+
+DEFAULT_VALUES = {
+
+    "prompt": "",
+
+    "negative_prompt": "",
+
+    "model": "SDXL",
+
+    "width": 1024,
+
+    "height": 1024,
+
+    "steps": 30,
+
+    "cfg": 8.0,
+
+    "seed": 0
+
+}
+
+
+def initialize():
+
+    for key, value in DEFAULT_VALUES.items():
+
+        if key not in st.session_state:
+
+            st.session_state[key] = value
+
+
+def load_prompt(prompt):
+
+    st.session_state.prompt = prompt["prompt"]
+
+    st.session_state.negative_prompt = prompt["negative_prompt"]
+
+    st.session_state.model = prompt["model"]
+
+    st.session_state.width = prompt["width"]
+
+    st.session_state.height = prompt["height"]
+
+    st.session_state.steps = prompt["steps"]
+
+    st.session_state.cfg = prompt["cfg"]
+
+    st.session_state.seed = prompt["seed"]
+
+
+def clear():
+
+    for key, value in DEFAULT_VALUES.items():
+
+        st.session_state[key] = value
+
+===== workflows/sdxl_api.json =====
+{
+  "2": {
+    "inputs": {
+      "text": "A futuristic AI Data Center with NVIDIA DGX Spark servers,\ncinematic lighting,\nultra realistic,\n8K,\nhigh detail,\nphotorealistic"
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "3": {
+    "inputs": {
+      "text": "blurry,\nlow quality,\ndeformed,\nextra fingers,\nbad anatomy,\ntext,\nwatermark",
+      "clip": [
+        "8",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "4": {
+    "inputs": {
+      "width": 1024,
+      "height": 512,
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "Empty Latent Image"
+    }
+  },
+  "5": {
+    "inputs": {
+      "seed": 346653229689698,
+      "steps": 25,
+      "cfg": 7,
+      "sampler_name": "euler",
+      "scheduler": "normal",
+      "denoise": 1,
+      "model": [
+        "8",
+        0
+      ],
+      "positive": [
+        "7",
+        0
+      ],
+      "negative": [
+        "3",
+        0
+      ],
+      "latent_image": [
+        "4",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "6": {
+    "inputs": {
+      "filename_prefix": "DGX_AI_MovieStudio",
+      "images": [
+        "9",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  },
+  "7": {
+    "inputs": {
+      "text": "A futuristic AI Data Center with NVIDIA DGX Spark servers,\ncinematic lighting,\nultra realistic,\n8K,\nhigh detail,\nphotorealistic",
+      "clip": [
+        "8",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "8": {
+    "inputs": {
+      "ckpt_name": "sd_xl_base_1.0.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "Load Checkpoint"
+    }
+  },
+  "9": {
+    "inputs": {
+      "samples": [
+        "5",
+        0
+      ],
+      "vae": [
+        "8",
+        2
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  }
+}
+
+===== DB schema (stories/scenes/images/prompts) =====
+CREATE TABLE stories (
+
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    title TEXT,
+
+    prompt TEXT,
+
+    genre TEXT,
+
+    style TEXT,
+
+    scene_count INTEGER,
+
+    status TEXT,
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
+);
+CREATE TABLE scenes (
+
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    story_id INTEGER,
+
+    scene_number INTEGER,
+
+    title TEXT,
+
+    description TEXT,
+
+    image_path TEXT,
+
+    video_path TEXT,
+
+    status TEXT,
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
+);
+CREATE TABLE images (
+
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    project_id INTEGER,
+
+    filename TEXT,
+
+    filepath TEXT,
+
+    prompt TEXT,
+
+    negative_prompt TEXT,
+
+    checkpoint TEXT,
+
+    width INTEGER,
+
+    height INTEGER,
+
+    steps INTEGER,
+
+    cfg REAL,
+
+    seed INTEGER,
+
+    generation_time REAL,
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY(project_id) REFERENCES projects(id)
+
+);
+CREATE TABLE prompts (
+
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    title TEXT,
+
+    prompt TEXT,
+
+    negative_prompt TEXT,
+
+    model TEXT,
+
+    seed INTEGER,
+
+    width INTEGER,
+
+    height INTEGER,
+
+    steps INTEGER,
+
+    cfg REAL,
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
+, category TEXT, favorite INTEGER DEFAULT 0, last_used TIMESTAMP, use_count INTEGER DEFAULT 0);

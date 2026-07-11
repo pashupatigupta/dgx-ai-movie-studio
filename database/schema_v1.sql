@@ -112,28 +112,15 @@ CREATE TABLE IF NOT EXISTS models (
 
     id INTEGER PRIMARY KEY AUTOINCREMENT,
 
-    name TEXT,
+    model_name TEXT,
 
     model_type TEXT,
 
-    folder TEXT,
+    checkpoint TEXT,
 
-    path TEXT UNIQUE,
-
-    size_mb REAL,
-
-    last_modified TEXT,
-
-    enabled INTEGER DEFAULT 1,
-
-    default_model INTEGER DEFAULT 0,
-
-    tags TEXT,
-
-    description TEXT,
+    status TEXT,
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-
 
 );
 
