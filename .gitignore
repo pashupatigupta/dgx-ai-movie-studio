@@ -72,3 +72,6 @@ Thumbs.db
 # Archived duplicates and local backups
 _archive/
 *.bak
+
+# Downloaded model weights (re-downloadable, too big for git)
+models/piper/
