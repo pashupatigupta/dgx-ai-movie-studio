@@ -2,13 +2,18 @@
 Movie Service
 DGX AI Movie Studio
 
-Phase B: stitch a story's scene images into a watchable MP4.
+Phases B + E: stitch a story's scene images into a watchable MP4, optionally
+with a spoken narration track.
 
-Approach: each scene image is rendered into a short H.264 clip (scaled and
-letterboxed onto a 16:9 frame, with optional fade in/out), then all clips are
-concatenated into the final movie. Rendering per-scene clips first — rather
-than one giant ffmpeg filter graph — keeps each step simple and makes failures
-easy to locate.
+Approach: each scene image becomes a short H.264 clip (scaled and letterboxed
+onto a 16:9 frame, with optional fade in/out), then all clips are concatenated.
+Rendering per-scene clips first — rather than one giant ffmpeg filter graph —
+keeps each step simple and makes failures easy to locate.
+
+With narration enabled, a scene stays on screen for as long as its voiceover
+takes (plus a little breathing room), so the picture never cuts off mid-
+sentence. Every clip is given an audio track (silent if a scene has no
+narration) so the final concatenation stays consistent.
 
 Requires the `ffmpeg` binary on PATH.
 """
@@ -20,11 +25,16 @@ from pathlib import Path
 
 from repositories.story_repository import StoryRepository
 from repositories.scene_repository import SceneRepository
+from services.narration_service import NarrationService, audio_duration
 
 
 MOVIE_DIR = Path("outputs/movies")
 TARGET_W = 1280
 TARGET_H = 720
+SAMPLE_RATE = 22050
+
+# Silence held after a narration line finishes, so scenes don't cut abruptly.
+NARRATION_TAIL = 1.0
 
 
 def build_video_filter(duration, fade, width=TARGET_W, height=TARGET_H):
@@ -49,11 +59,25 @@ def build_video_filter(duration, fade, width=TARGET_W, height=TARGET_H):
     return ",".join(parts)
 
 
+def scene_duration(narration_wav, fallback, tail=NARRATION_TAIL):
+    """
+    How long a scene should stay on screen.
+
+    With narration: the length of the voiceover plus a tail of silence, but
+    never shorter than `fallback`. Without narration: just `fallback`.
+    """
+    if not narration_wav:
+        return float(fallback)
+    spoken = audio_duration(narration_wav)
+    return round(max(float(fallback), spoken + tail), 3)
+
+
 class MovieService:
 
     def __init__(self):
         self.stories = StoryRepository()
         self.scenes = SceneRepository()
+        self.narration = NarrationService()
         MOVIE_DIR.mkdir(parents=True, exist_ok=True)
 
     # ---- helpers ---------------------------------------------------
@@ -83,19 +107,46 @@ class MovieService:
             tail = "\n".join(proc.stderr.strip().splitlines()[-15:])
             raise RuntimeError(f"ffmpeg failed:\n{tail}")
 
-    def _render_clip(self, image_path, clip_path, duration, fade):
+    # ---- clip rendering --------------------------------------------
+
+    def _render_clip(self, image_path, clip_path, duration, fade,
+                     audio_path=None):
+        """
+        Render one scene image into a clip of `duration` seconds.
+
+        Always produces an audio track: the narration WAV (padded with silence
+        to fill the clip) when given, otherwise pure silence. Uniform streams
+        let the clips be concatenated without re-encoding.
+        """
         vf = build_video_filter(duration, fade)
-        self._run([
-            "ffmpeg", "-y",
-            "-loop", "1",
+
+        cmd = ["ffmpeg", "-y", "-loop", "1", "-i", str(image_path)]
+
+        if audio_path:
+            cmd += ["-i", str(audio_path)]
+            audio_filter = "apad"
+        else:
+            cmd += [
+                "-f", "lavfi",
+                "-i", f"anullsrc=r={SAMPLE_RATE}:cl=mono",
+            ]
+            audio_filter = "anull"
+
+        cmd += [
             "-t", str(duration),
-            "-i", str(image_path),
             "-vf", vf,
+            "-af", audio_filter,
             "-r", "25",
             "-c:v", "libx264",
             "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-b:a", "128k",
+            "-ar", str(SAMPLE_RATE),
+            "-ac", "1",
             str(clip_path),
-        ])
+        ]
+
+        self._run(cmd)
 
     def _concat(self, list_file, output):
         self._run([
@@ -109,9 +160,14 @@ class MovieService:
 
     # ---- main entry point ------------------------------------------
 
-    def build_movie(self, story_id, seconds_per_scene=3.0, fade=True):
+    def build_movie(self, story_id, seconds_per_scene=3.0, fade=True,
+                    narrate=False):
         """
         Render every image-bearing scene of a story into a single MP4.
+
+        When `narrate` is True, generates (or reuses) Piper narration for each
+        scene and sizes each scene to its voiceover.
+
         Returns the path to the finished movie.
         """
         if not self.ffmpeg_available():
@@ -119,6 +175,11 @@ class MovieService:
                 "ffmpeg is not installed. Install it with: "
                 "sudo apt install -y ffmpeg"
             )
+
+        if narrate:
+            problem = self.narration.status_message()
+            if problem:
+                raise RuntimeError(problem)
 
         scenes = self.scenes_with_images(story_id)
         if not scenes:
@@ -131,12 +192,19 @@ class MovieService:
         try:
             clips = []
             for index, scene in enumerate(scenes):
+                wav = None
+                if narrate:
+                    wav = self.narration.narrate_scene(scene)
+
+                duration = scene_duration(wav, seconds_per_scene)
+
                 clip_path = temp_dir / f"clip_{index:03d}.mp4"
                 self._render_clip(
                     scene["image_path"],
                     clip_path,
-                    float(seconds_per_scene),
+                    duration,
                     fade,
+                    audio_path=wav,
                 )
                 clips.append(clip_path)
 
