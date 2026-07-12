@@ -45,6 +45,7 @@ class StoryboardService:
                 scene_number=scene["scene_number"],
                 title=scene["title"],
                 description=scene["description"],
+                narration_text=scene.get("narration_text"),
                 status="draft",
             )
 
@@ -59,8 +60,11 @@ class StoryboardService:
     def get_scenes(self, story_id):
         return self.scenes.list_by_story(story_id)
 
-    def update_scene(self, scene_id, title, description):
-        self.scenes.update_content(scene_id, title, description)
+    def update_scene(self, scene_id, title, description,
+                     narration_text=None):
+        self.scenes.update_content(
+            scene_id, title, description, narration_text
+        )
 
     def delete_story(self, story_id):
         self.scenes.delete_by_story(story_id)
@@ -83,8 +87,8 @@ class StoryboardService:
         Generate one image for a scene via the existing ImageService, store the
         resulting path on the scene row, and return the path.
 
-        The seed is offset by scene_number so each scene in a story renders a
-        distinct frame while staying reproducible.
+        The seed is offset by scene_number so each scene renders a distinct
+        frame while staying reproducible.
         """
         effective_seed = int(seed) + int(scene.get("scene_number", 0))
 

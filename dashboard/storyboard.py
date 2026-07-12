@@ -2,8 +2,12 @@
 Storyboard
 DGX AI Movie Studio
 
-Phase A UI: turn a single text prompt into a multi-scene storyboard,
-edit scenes, and generate an image per scene. Thin UI over StoryboardService.
+Phase A UI: turn a single text prompt into a multi-scene storyboard, edit each
+scene, and generate an image per scene.
+
+Each scene carries TWO texts, edited separately:
+    Image prompt   -> what SDXL draws (style tags welcome)
+    Narration line -> what the narrator says (plain prose, no style tags)
 """
 
 import streamlit as st
@@ -56,7 +60,7 @@ def run():
                 st.session_state["active_story_id"] = story_id
                 st.success(
                     f"Storyboard created (story #{story_id}). "
-                    "Open the 'Story Library' tab to view and render it."
+                    "Open the 'Story Library' tab to edit and render it."
                 )
 
     # ----------------------------------------------------------------
@@ -102,16 +106,28 @@ def run():
                 service.generate_all_images(story_id)
             st.success("All scene images generated.")
 
+        st.caption(
+            "Tip: the **image prompt** is what SDXL draws (style tags are "
+            "fine). The **narration line** is what the narrator speaks — keep "
+            "it plain prose, no style tags."
+        )
         st.divider()
 
         for scene in service.get_scenes(story_id):
             st.markdown(f"### {scene['title']}")
 
             new_desc = st.text_area(
-                "Description / image prompt",
-                value=scene["description"],
+                "🖼 Image prompt",
+                value=scene["description"] or "",
                 key=f"desc_{scene['id']}",
                 height=90,
+            )
+
+            new_narration = st.text_area(
+                "🎙 Narration line (spoken)",
+                value=scene.get("narration_text") or "",
+                key=f"narr_{scene['id']}",
+                height=70,
             )
 
             c1, c2 = st.columns(2)
@@ -121,8 +137,12 @@ def run():
                         scene_id=scene["id"],
                         title=scene["title"],
                         description=new_desc,
+                        narration_text=new_narration,
                     )
-                    st.success("Saved.")
+                    st.success(
+                        "Saved. (If you changed the narration, use "
+                        "'Regenerate narration' in Movie Builder.)"
+                    )
             with c2:
                 if st.button("Generate Image", key=f"img_{scene['id']}"):
                     scene_for_image = dict(scene)

@@ -4,6 +4,10 @@ DGX AI Movie Studio
 
 Data-access layer for the `scenes` table.
 One fresh connection per method (Streamlit-safe), same as StoryRepository.
+
+Note the two distinct text fields:
+    description    -> image prompt (SDXL)
+    narration_text -> spoken line  (Piper TTS)
 """
 
 from config.database import get_connection
@@ -12,16 +16,18 @@ from config.database import get_connection
 class SceneRepository:
 
     def create(self, story_id, scene_number, title, description,
-               status="draft"):
+               narration_text=None, status="draft"):
         conn = get_connection()
         try:
             cursor = conn.execute(
                 """
                 INSERT INTO scenes
-                    (story_id, scene_number, title, description, status)
-                VALUES (?, ?, ?, ?, ?)
+                    (story_id, scene_number, title, description,
+                     narration_text, status)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (story_id, scene_number, title, description, status),
+                (story_id, scene_number, title, description,
+                 narration_text, status),
             )
             conn.commit()
             return cursor.lastrowid
@@ -54,12 +60,17 @@ class SceneRepository:
         finally:
             conn.close()
 
-    def update_content(self, scene_id, title, description):
+    def update_content(self, scene_id, title, description,
+                       narration_text=None):
         conn = get_connection()
         try:
             conn.execute(
-                "UPDATE scenes SET title = ?, description = ? WHERE id = ?",
-                (title, description, scene_id),
+                """
+                UPDATE scenes
+                SET title = ?, description = ?, narration_text = ?
+                WHERE id = ?
+                """,
+                (title, description, narration_text, scene_id),
             )
             conn.commit()
         finally:

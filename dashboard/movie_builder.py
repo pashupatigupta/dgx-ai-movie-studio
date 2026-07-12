@@ -3,26 +3,38 @@ Movie Builder
 DGX AI Movie Studio
 
 Phases B + E UI: pick a story whose scenes have images, optionally add spoken
-narration, render an MP4, then play and download it. Thin UI over MovieService.
+narration (choosing a voice), render an MP4, then play and download it.
 """
 
 import streamlit as st
 
 from services.movie_service import MovieService
+from services.narration_service import (
+    NarrationService, available_voices, DEFAULT_VOICE,
+)
 
 
 def run():
     st.title("🎥 Movie Builder")
     st.caption("Scene Images (+ Narration) → MP4 Movie")
 
-    service = MovieService()
-
-    if not service.ffmpeg_available():
+    if not MovieService.ffmpeg_available():
         st.error(
             "ffmpeg is not installed, so movies can't be rendered yet.\n\n"
             "Install it with:  sudo apt install -y ffmpeg"
         )
         return
+
+    # ---- voice selection (before building the service) --------------
+    voices = available_voices()
+    voice = DEFAULT_VOICE
+    if voices:
+        default_index = (
+            voices.index(DEFAULT_VOICE) if DEFAULT_VOICE in voices else 0
+        )
+        voice = st.selectbox("🎙 Narrator voice", voices, index=default_index)
+
+    service = MovieService(voice=voice)
 
     stories = service.stories.list_all()
     if not stories:
@@ -42,14 +54,12 @@ def run():
 
     if not scenes:
         st.warning(
-            "This story has no scene images yet. Go to the Storyboard page and "
-            "use 'Generate Images for All Scenes' first."
+            "This story has no scene images yet. Go to the Storyboard page "
+            "and use 'Generate Images for All Scenes' first."
         )
         return
 
-    # ----------------------------------------------------------------
-    # Options
-    # ----------------------------------------------------------------
+    # ---- options ----------------------------------------------------
     col1, col2 = st.columns(2)
     with col1:
         seconds = st.slider(
@@ -68,25 +78,26 @@ def run():
         )
         narrate = False
     else:
-        done = service.narration.narration_count(story_id)
         narrate = st.checkbox(
             "🎙 Add spoken narration (Piper TTS)", value=True
         )
         if narrate:
+            done = service.narration.narration_count(story_id)
             st.caption(
-                f"Narration already generated for {done}/{total} scenes. "
-                "Missing scenes will be voiced during the build. With "
-                "narration on, each scene stays on screen for at least as "
-                "long as its voiceover."
+                f"Narration cached for {done}/{total} scenes with this voice. "
+                "Scenes stay on screen at least as long as their voiceover."
             )
+            if st.button("🔄 Regenerate narration (after editing lines)"):
+                removed = service.narration.clear_narration(story_id)
+                st.success(
+                    f"Cleared {removed} cached narration file(s). "
+                    "They'll be re-voiced on the next build."
+                )
 
     if not narrate:
-        est = len(scenes) * seconds
-        st.caption(f"Estimated length: ~{est:.0f} seconds")
+        st.caption(f"Estimated length: ~{len(scenes) * seconds:.0f} seconds")
 
-    # ----------------------------------------------------------------
-    # Build
-    # ----------------------------------------------------------------
+    # ---- build ------------------------------------------------------
     if st.button("🎬 Build Movie", type="primary"):
         try:
             spinner_text = (
@@ -106,7 +117,6 @@ def run():
             st.error(f"Movie build failed:\n\n{exc}")
             return
 
-    # Show the current movie (freshly built or from a previous run).
     movie = service.movie_path(story_id)
     if movie:
         st.divider()

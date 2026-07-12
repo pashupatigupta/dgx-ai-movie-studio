@@ -74,10 +74,10 @@ def scene_duration(narration_wav, fallback, tail=NARRATION_TAIL):
 
 class MovieService:
 
-    def __init__(self):
+    def __init__(self, voice=None):
         self.stories = StoryRepository()
         self.scenes = SceneRepository()
-        self.narration = NarrationService()
+        self.narration = NarrationService(voice=voice)
         MOVIE_DIR.mkdir(parents=True, exist_ok=True)
 
     # ---- helpers ---------------------------------------------------

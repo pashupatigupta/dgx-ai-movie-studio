@@ -2,11 +2,20 @@
 Narration Service
 DGX AI Movie Studio
 
-Phase E: turn scene descriptions into spoken audio using Piper TTS.
+Phase E: turn a scene's SPOKEN LINE into audio using Piper TTS.
 
-Piper runs locally on CPU (no GPU needed, so it doesn't compete with SDXL)
-and is invoked through its CLI, which is the most stable interface across
-Piper versions.
+Speaks `narration_text` (plain prose written for a narrator), falling back to
+`description` only if no narration line exists. Never assume the image prompt
+is speakable: it's full of style tags like "photorealistic, 8K" that sound
+absurd read aloud.
+
+Piper runs locally on CPU (no GPU needed, so it doesn't compete with SDXL) and
+is invoked through its CLI, the most stable interface across Piper versions.
+
+Binary lookup: we look for `piper` next to the running interpreter (this venv's
+bin/) BEFORE falling back to PATH. A long-running Streamlit server keeps the
+environment it started with, so a tool installed mid-session may not be on its
+PATH even though it works in the shell. Resolving via sys.executable avoids it.
 
 Requires:
     pip install piper-tts
@@ -15,6 +24,7 @@ Requires:
 
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 from repositories.scene_repository import SceneRepository
@@ -25,18 +35,36 @@ NARRATION_DIR = Path("outputs/narration")
 DEFAULT_VOICE = "en_US-lessac-medium"
 
 
+def find_piper():
+    """Return the path to the piper binary, or None if it can't be found."""
+    candidate = Path(sys.executable).parent / "piper"
+    if candidate.exists():
+        return str(candidate)
+    return shutil.which("piper")
+
+
+def available_voices():
+    """Voice names (without extension) present in models/piper/."""
+    if not VOICE_DIR.exists():
+        return []
+    return sorted(p.stem for p in VOICE_DIR.glob("*.onnx"))
+
+
 class NarrationService:
 
-    def __init__(self, voice=DEFAULT_VOICE):
-        self.voice = voice
+    def __init__(self, voice=None):
+        self.voice = voice or DEFAULT_VOICE
         self.scenes = SceneRepository()
         NARRATION_DIR.mkdir(parents=True, exist_ok=True)
 
     # ---- availability ----------------------------------------------
 
     @staticmethod
-    def piper_available():
-        return shutil.which("piper") is not None
+    def piper_binary():
+        return find_piper()
+
+    def piper_available(self):
+        return self.piper_binary() is not None
 
     def voice_path(self):
         return VOICE_DIR / f"{self.voice}.onnx"
@@ -45,14 +73,15 @@ class NarrationService:
         return self.voice_path().exists()
 
     def ready(self):
-        """True when both the piper binary and the voice model are present."""
         return self.piper_available() and self.voice_available()
 
     def status_message(self):
         """Human-readable reason narration isn't available, or None if it is."""
         if not self.piper_available():
             return (
-                "Piper is not installed. Run:  pip install piper-tts"
+                "Piper was not found. Install it with:  pip install piper-tts\n"
+                "If you just installed it, restart Streamlit so it picks up "
+                "the new binary."
             )
         if not self.voice_available():
             return (
@@ -62,11 +91,29 @@ class NarrationService:
             )
         return None
 
+    # ---- text selection ---------------------------------------------
+
+    @staticmethod
+    def spoken_text(scene):
+        """
+        The line a narrator should actually say for this scene.
+
+        Prefers narration_text; falls back to the scene title (never the raw
+        image prompt, which is full of unspeakable style tags).
+        """
+        text = (scene.get("narration_text") or "").strip()
+        if text:
+            return text
+        title = (scene.get("title") or "").split(":", 1)[-1].strip()
+        return title
+
     # ---- synthesis --------------------------------------------------
 
     def narration_path(self, story_id, scene_number):
-        """Deterministic path for a scene's narration audio."""
-        return NARRATION_DIR / f"story_{story_id}_scene_{scene_number}.wav"
+        """Deterministic path, keyed by voice so switching voices re-renders."""
+        return NARRATION_DIR / (
+            f"story_{story_id}_scene_{scene_number}_{self.voice}.wav"
+        )
 
     def synthesize(self, text, output_path):
         """Speak `text` into a WAV file at output_path. Returns the path."""
@@ -79,7 +126,7 @@ class NarrationService:
 
         proc = subprocess.run(
             [
-                "piper",
+                self.piper_binary(),
                 "--model", str(self.voice_path()),
                 "--output_file", str(output_path),
             ],
@@ -95,31 +142,34 @@ class NarrationService:
         return str(output_path)
 
     def narrate_scene(self, scene, force=False):
-        """
-        Generate (or reuse) narration for one scene.
-        Returns the path to the WAV file.
-        """
+        """Generate (or reuse) narration for one scene. Returns the WAV path."""
         path = self.narration_path(scene["story_id"], scene["scene_number"])
 
         if path.exists() and not force:
             return str(path)
 
-        text = scene.get("description") or scene.get("title") or ""
+        text = self.spoken_text(scene)
+        if not text:
+            return None
+
         return self.synthesize(text, path)
 
     def narrate_story(self, story_id, force=False):
-        """
-        Generate narration for every scene in a story.
-        Returns a list of (scene_number, wav_path).
-        """
         results = []
         for scene in self.scenes.list_by_story(story_id):
             wav = self.narrate_scene(scene, force=force)
             results.append((scene["scene_number"], wav))
         return results
 
+    def clear_narration(self, story_id):
+        """Delete cached narration WAVs for a story (all voices)."""
+        removed = 0
+        for path in NARRATION_DIR.glob(f"story_{story_id}_scene_*.wav"):
+            path.unlink()
+            removed += 1
+        return removed
+
     def narration_count(self, story_id):
-        """How many scenes already have narration audio on disk."""
         count = 0
         for scene in self.scenes.list_by_story(story_id):
             if self.narration_path(

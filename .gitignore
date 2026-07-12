@@ -75,3 +75,6 @@ _archive/
 
 # Downloaded model weights (re-downloadable, too big for git)
 models/piper/
+
+# Downloaded model weights (re-downloadable, too big for git)
+models/piper/
