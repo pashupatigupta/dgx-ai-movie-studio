@@ -2,8 +2,8 @@
 Movie Builder
 DGX AI Movie Studio
 
-Phases B + E UI: pick a story whose scenes have images, optionally add spoken
-narration (choosing a voice), render an MP4, then play and download it.
+Phases B + E + F UI: take a story's scene images, optionally add spoken
+narration and a music bed, render an MP4, then play and download it.
 """
 
 import streamlit as st
@@ -12,11 +12,12 @@ from services.movie_service import MovieService
 from services.narration_service import (
     NarrationService, available_voices, DEFAULT_VOICE,
 )
+from services.music_service import available_tracks, MUSIC_DIR
 
 
 def run():
     st.title("🎥 Movie Builder")
-    st.caption("Scene Images (+ Narration) → MP4 Movie")
+    st.caption("Scene Images (+ Narration + Music) → MP4 Movie")
 
     if not MovieService.ffmpeg_available():
         st.error(
@@ -25,7 +26,7 @@ def run():
         )
         return
 
-    # ---- voice selection (before building the service) --------------
+    # ---- narrator voice (chosen before building the service) --------
     voices = available_voices()
     voice = DEFAULT_VOICE
     if voices:
@@ -59,7 +60,7 @@ def run():
         )
         return
 
-    # ---- options ----------------------------------------------------
+    # ---- timing -----------------------------------------------------
     col1, col2 = st.columns(2)
     with col1:
         seconds = st.slider(
@@ -69,6 +70,30 @@ def run():
     with col2:
         fade = st.checkbox("Fade between scenes", value=True)
 
+    # ---- camera motion ----------------------------------------------
+    st.markdown("##### 🎥 Camera motion")
+
+    mcol1, mcol2 = st.columns(2)
+    with mcol1:
+        motion = st.selectbox(
+            "Motion style",
+            ["auto", "zoom_in", "zoom_out", "pan_right", "pan_left", "none"],
+            index=0,
+            help=(
+                "A slow push-in or drift across a still image reads as "
+                "cinematic. 'auto' varies the movement scene to scene."
+            ),
+        )
+    with mcol2:
+        fill = st.checkbox(
+            "Fill the frame (crop)", value=True,
+            help=(
+                "Crops each image to fill 16:9 — no black bars, and room for "
+                "the camera to move. Uncheck to letterbox the whole image."
+            ),
+        )
+
+    # ---- narration --------------------------------------------------
     narration_problem = service.narration.status_message()
 
     if narration_problem:
@@ -94,23 +119,67 @@ def run():
                     "They'll be re-voiced on the next build."
                 )
 
-    if not narrate:
+    # ---- music ------------------------------------------------------
+    st.markdown("##### 🎵 Background music")
+
+    tracks = available_tracks()
+    music_track = None
+    music_volume = 0.25
+    duck_music = True
+
+    if not tracks:
+        st.info(
+            f"No music tracks yet. Drop .mp3 or .wav files into `{MUSIC_DIR}/` "
+            "and they'll show up here.\n\n"
+            "Free sources: incompetech.com, freepd.com, or the YouTube Audio "
+            "Library."
+        )
+    else:
+        choice = st.selectbox("Track", ["(none)"] + tracks)
+        if choice != "(none)":
+            music_track = choice
+            mcol1, mcol2 = st.columns(2)
+            with mcol1:
+                music_volume = st.slider(
+                    "Music volume", min_value=0.05, max_value=1.0,
+                    value=0.25, step=0.05,
+                )
+            with mcol2:
+                duck_music = st.checkbox(
+                    "Duck under narration", value=True,
+                    help=(
+                        "Automatically lowers the music whenever the narrator "
+                        "speaks, then brings it back up in the gaps."
+                    ),
+                )
+
+    if not narrate and not music_track:
         st.caption(f"Estimated length: ~{len(scenes) * seconds:.0f} seconds")
 
     # ---- build ------------------------------------------------------
     if st.button("🎬 Build Movie", type="primary"):
         try:
+            steps = []
+            if narrate:
+                steps.append("narration")
+            if music_track:
+                steps.append("music")
             spinner_text = (
-                "Generating narration and rendering movie..."
-                if narrate else
-                "Rendering movie with ffmpeg..."
+                f"Rendering movie ({' + '.join(steps)})..."
+                if steps else "Rendering movie with ffmpeg..."
             )
+
             with st.spinner(spinner_text):
                 service.build_movie(
                     story_id,
                     seconds_per_scene=seconds,
                     fade=fade,
+                    motion=motion,
+                    fill=fill,
                     narrate=narrate,
+                    music_track=music_track,
+                    music_volume=music_volume,
+                    duck_music=duck_music,
                 )
             st.success("Movie built successfully.")
         except Exception as exc:
