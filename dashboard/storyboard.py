@@ -13,6 +13,7 @@ Each scene carries TWO texts, edited separately:
 import streamlit as st
 
 from services.storyboard_service import StoryboardService
+from services.video_service import VideoService
 
 
 def run():
@@ -20,6 +21,7 @@ def run():
     st.caption("Text → Storyboard → Scene Images")
 
     service = StoryboardService()
+    video = VideoService()
 
     tab_create, tab_library = st.tabs(["Create New", "Story Library"])
 
@@ -130,7 +132,7 @@ def run():
                 height=70,
             )
 
-            c1, c2 = st.columns(2)
+            c1, c2, c3 = st.columns(3)
             with c1:
                 if st.button("Save", key=f"save_{scene['id']}"):
                     service.update_scene(
@@ -144,17 +146,41 @@ def run():
                         "'Regenerate narration' in Movie Builder.)"
                     )
             with c2:
-                if st.button("Generate Image", key=f"img_{scene['id']}"):
+                if st.button("🖼 Generate Image", key=f"img_{scene['id']}"):
                     scene_for_image = dict(scene)
                     scene_for_image["description"] = new_desc
                     with st.spinner("Generating scene image..."):
                         path = service.generate_scene_image(scene_for_image)
                     st.image(path, caption=scene["title"])
+            with c3:
+                if st.button(
+                    "🎞 Animate (AI)",
+                    key=f"vid_{scene['id']}",
+                    disabled=not scene.get("image_path"),
+                    help=(
+                        "Turn this still into a real moving clip with "
+                        "LTX-Video. Takes roughly 2 minutes."
+                    ),
+                ):
+                    scene_for_video = dict(scene)
+                    scene_for_video["description"] = new_desc
+                    try:
+                        with st.spinner(
+                            "Animating with LTX-Video (~2 min)..."
+                        ):
+                            path = video.animate_scene(scene_for_video)
+                        st.success("Scene animated.")
+                        st.video(path)
+                    except Exception as exc:
+                        st.error(f"Animation failed:\n\n{exc}")
 
-            if scene.get("image_path"):
+            if scene.get("video_path"):
+                st.video(scene["video_path"])
+                st.caption(f"{scene['title']} — animated clip")
+            elif scene.get("image_path"):
                 st.image(
                     scene["image_path"],
-                    caption=f"{scene['title']} (saved)",
+                    caption=f"{scene['title']} (still)",
                 )
 
             st.divider()

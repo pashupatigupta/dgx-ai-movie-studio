@@ -13,6 +13,7 @@ from services.narration_service import (
     NarrationService, available_voices, DEFAULT_VOICE,
 )
 from services.music_service import available_tracks, MUSIC_DIR
+from services.video_service import VideoService
 
 
 def run():
@@ -73,17 +74,29 @@ def run():
     # ---- camera motion ----------------------------------------------
     st.markdown("##### 🎥 Camera motion")
 
+    animated = VideoService().video_count(story_id)
+
     mcol1, mcol2 = st.columns(2)
     with mcol1:
         motion = st.selectbox(
             "Motion style",
-            ["auto", "zoom_in", "zoom_out", "pan_right", "pan_left", "none"],
+            ["auto", "ai", "zoom_in", "zoom_out", "pan_right", "pan_left",
+             "none"],
             index=0,
             help=(
-                "A slow push-in or drift across a still image reads as "
-                "cinematic. 'auto' varies the movement scene to scene."
+                "'ai' uses real generated motion for scenes you've animated "
+                "in the Storyboard page, and falls back to camera motion for "
+                "the rest. Everything else is ffmpeg camera movement on the "
+                "stills (instant)."
             ),
         )
+    if motion == "ai":
+        st.caption(
+            f"AI-animated clips available for {animated}/{total} scenes. "
+            "Scenes without one fall back to camera motion. Animate scenes in "
+            "the Storyboard page (~2 min each)."
+        )
+
     with mcol2:
         fill = st.checkbox(
             "Fill the frame (crop)", value=True,

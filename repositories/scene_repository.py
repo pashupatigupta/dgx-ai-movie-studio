@@ -76,6 +76,17 @@ class SceneRepository:
         finally:
             conn.close()
 
+    def update_video(self, scene_id, video_path, status="video_ready"):
+        conn = get_connection()
+        try:
+            conn.execute(
+                "UPDATE scenes SET video_path = ?, status = ? WHERE id = ?",
+                (video_path, status, scene_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
     def update_image(self, scene_id, image_path, status="image_ready"):
         conn = get_connection()
         try:

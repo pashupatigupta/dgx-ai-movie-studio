@@ -27,7 +27,7 @@ from pathlib import Path
 from repositories.story_repository import StoryRepository
 from repositories.scene_repository import SceneRepository
 from services.narration_service import NarrationService, audio_duration
-from services.music_service import MusicService, LibraryProvider
+from services.music_service import MusicService, LibraryProvider, media_duration
 
 
 MOVIE_DIR = Path("outputs/movies")
@@ -229,6 +229,53 @@ class MovieService:
 
         self._run(cmd)
 
+    def _render_ai_clip(self, video_path, clip_path, duration, fade,
+                        audio_path=None):
+        """
+        Normalise an AI-generated clip (LTX outputs 768x512 with its own
+        ambient audio) into the same format as our still-image clips, so they
+        concatenate cleanly.
+
+        If the scene needs to be longer than the generated clip (because the
+        narration runs past it), the final frame is held with tpad rather than
+        cutting the voice off mid-sentence.
+        """
+        vf = [
+            f"scale={TARGET_W}:{TARGET_H}:force_original_aspect_ratio=decrease",
+            f"pad={TARGET_W}:{TARGET_H}:(ow-iw)/2:(oh-ih)/2",
+            "setsar=1",
+            f"tpad=stop_mode=clone:stop_duration={duration}",
+        ]
+        vf += _fade_parts(duration, fade)
+        vf.append("format=yuv420p")
+
+        cmd = ["ffmpeg", "-y", "-i", str(video_path)]
+
+        if audio_path:
+            # Narration replaces the model's ambient audio.
+            cmd += ["-i", str(audio_path), "-map", "0:v", "-map", "1:a"]
+            audio_filter = "apad"
+        else:
+            # Keep LTX's generated ambient audio.
+            audio_filter = "apad"
+
+        cmd += [
+            "-t", str(duration),
+            "-vf", ",".join(vf),
+            "-af", audio_filter,
+            "-r", str(FPS),
+            "-c:v", "libx264",
+            "-preset", "medium",
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-b:a", "128k",
+            "-ar", str(SAMPLE_RATE),
+            "-ac", "1",
+            str(clip_path),
+        ]
+
+        self._run(cmd)
+
     def _concat(self, list_file, output):
         self._run([
             "ffmpeg", "-y",
@@ -277,18 +324,39 @@ class MovieService:
             clips = []
             for index, scene in enumerate(scenes):
                 wav = self.narration.narrate_scene(scene) if narrate else None
-                duration = scene_duration(wav, seconds_per_scene)
-
                 clip_path = temp_dir / f"clip_{index:03d}.mp4"
-                self._render_clip(
-                    scene["image_path"],
-                    clip_path,
-                    duration,
-                    fade,
-                    motion=motion_for_scene(motion, index),
-                    fill=fill,
-                    audio_path=wav,
+
+                ai_clip = scene.get("video_path")
+                use_ai = (
+                    motion == "ai"
+                    and ai_clip
+                    and Path(ai_clip).exists()
                 )
+
+                if use_ai:
+                    # Scene lasts at least as long as its generated clip, and
+                    # longer if the narration needs the room.
+                    clip_len = media_duration(ai_clip)
+                    duration = max(
+                        clip_len, scene_duration(wav, seconds_per_scene)
+                    )
+                    self._render_ai_clip(
+                        ai_clip, clip_path, duration, fade, audio_path=wav,
+                    )
+                else:
+                    duration = scene_duration(wav, seconds_per_scene)
+                    # "ai" with no clip falls back to Ken Burns, not a freeze.
+                    style = "auto" if motion == "ai" else motion
+                    self._render_clip(
+                        scene["image_path"],
+                        clip_path,
+                        duration,
+                        fade,
+                        motion=motion_for_scene(style, index),
+                        fill=fill,
+                        audio_path=wav,
+                    )
+
                 clips.append(clip_path)
 
             list_file = temp_dir / "clips.txt"
